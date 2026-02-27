@@ -1,18 +1,20 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { Camera, useCameraDevice } from 'react-native-vision-camera';
-import * as Speech from 'expo-speech'; 
+import * as Speech from 'expo-speech';
 import { getCurrencyFromAPI } from '../../src/ml/onlineModel';
+import { VoiceOverBadge } from '@/components/VoiceOverBadge';
 
 export default function ScanScreen() {
   const device = useCameraDevice('back');
   const camera = useRef<Camera>(null);
-  
+
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isCameraInitialized, setIsCameraInitialized] = useState(false);
 
   const handleScan = async () => {
-    if (camera.current == null) return;
+    if (camera.current == null || !isCameraInitialized) return;
 
     try {
       setLoading(true);
@@ -28,7 +30,7 @@ export default function ScanScreen() {
 
       // 2. Call the Flask API using the updated IP logic
       const prediction = await getCurrencyFromAPI(photo.path);
-      
+
       // 3. Update UI and trigger Text-to-Speech
       setResult(prediction);
       Speech.speak(`Detected ${prediction}`, { pitch: 1.0, rate: 0.9 });
@@ -56,22 +58,27 @@ export default function ScanScreen() {
         device={device}
         isActive={true}
         photo={true}
+        onInitialized={() => setIsCameraInitialized(true)}
       />
+
+      <View style={styles.topContainer}>
+        <VoiceOverBadge />
+      </View>
 
       <View style={styles.overlay}>
         {result && (
-          <View style={[styles.resultBadge, result === "Scan Failed" && {backgroundColor: '#d9534f'}]}>
+          <View style={[styles.resultBadge, result === "Scan Failed" && { backgroundColor: '#d9534f' }]}>
             <Text style={styles.resultText}>{result}</Text>
           </View>
         )}
 
-        <TouchableOpacity 
-          style={[styles.captureButton, loading && {opacity: 0.5}]} 
+        <TouchableOpacity
+          style={[styles.captureButton, loading && { opacity: 0.5 }]}
           onPress={handleScan}
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#007AFF" size="large" />
+            <ActivityIndicator color="#00E5FF" size="large" />
           ) : (
             <View style={styles.innerButton} />
           )}
@@ -84,6 +91,13 @@ export default function ScanScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   msg: { color: 'white', textAlign: 'center', marginTop: 100, fontSize: 18 },
+  topContainer: {
+    position: 'absolute',
+    top: 60,
+    width: '100%',
+    alignItems: 'center',
+    zIndex: 10,
+  },
   overlay: {
     position: 'absolute',
     bottom: 50,
@@ -91,34 +105,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   resultBadge: {
-    backgroundColor: '#28A745',
+    backgroundColor: 'rgba(18, 18, 18, 0.85)',
     paddingHorizontal: 40,
     paddingVertical: 15,
     borderRadius: 25,
     marginBottom: 40,
-    borderWidth: 2,
-    borderColor: '#fff',
-    elevation: 10,
+    borderWidth: 1,
+    borderColor: '#00E5FF',
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
   },
   resultText: {
-    color: '#fff',
+    color: '#00E5FF',
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '800',
+    letterSpacing: 1,
   },
   captureButton: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    borderWidth: 5,
-    borderColor: '#fff',
+    borderWidth: 4,
+    borderColor: '#00E5FF',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(0, 229, 255, 0.1)',
   },
   innerButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#fff',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#00E5FF',
   },
 });

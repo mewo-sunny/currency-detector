@@ -1,114 +1,95 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
-import { Camera, useCameraDevice } from 'react-native-vision-camera';
+import React, { useCallback } from 'react';
+import { StyleSheet, Text, View, ScrollView } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import * as Speech from 'expo-speech';
-import { getCurrencyFromAPI } from '../../src/ml/onlineModel';
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
-export default function RealTimeScanner() {
-  const device = useCameraDevice('back');
-  const camera = useRef<Camera>(null);
-  
-  const [prediction, setPrediction] = useState('Align note in frame');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [lastSpoken, setLastSpoken] = useState('');
+const instructionsText = "Welcome to MoneyLens. This app helps you identify Indian currency notes. To use the app, swipe left to reach the scanner. Hold your phone steady, point the camera at the currency note, and make sure it is fully visible. Tap the screen to scan. The result will be read aloud. Swipe left again for more help.";
 
-  // 1. Request Permissions on Mount
-  useEffect(() => {
-    (async () => {
-      await Camera.requestCameraPermission();
-    })();
-  }, []);
+export default function InstructionsScreen() {
+  const colorScheme = useColorScheme();
+  const theme = Colors[colorScheme ?? 'dark'];
 
-  // 2. The "Real-Time" Loop (Auto-Scan every 2 seconds)
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      if (camera.current && !isProcessing) {
-        handleCapture();
-      }
-    }, 2000); // 2000ms = 2 seconds
-
-    return () => clearInterval(interval);
-  }, [isProcessing]);
-
-  const handleCapture = async () => {
-    try {
-      setIsProcessing(true);
-      
-      // Capture a snapshot (silent, no flash)
-      const photo = await camera.current!.takePhoto({
-        flash: 'off',
-        enableShutterSound: false,
+  useFocusEffect(
+    useCallback(() => {
+      // Speak instructions when screen comes into focus
+      Speech.speak(instructionsText, {
+        language: 'en-IN',
+        pitch: 1.0,
+        rate: 0.9,
       });
 
-      // Send to your updated Flask API
-      const result = await getCurrencyFromAPI(`file://${photo.path}`);
-
-      if (result && result !== "Analyzing...") {
-        setPrediction(result);
-        
-        // Only speak if the note has changed
-        if (result !== lastSpoken) {
-          Speech.speak(result);
-          setLastSpoken(result);
-        }
-      }
-    } catch (err) {
-      console.error("Capture Error:", err);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  if (!device) return <View style={styles.centered}><Text>No Camera Found</Text></View>;
+      return () => {
+        // Stop speaking if the user navigates away
+        Speech.stop();
+      };
+    }, [])
+  );
 
   return (
-    <View style={styles.container}>
-      <Camera
-        ref={camera}
-        style={StyleSheet.absoluteFill}
-        device={device}
-        isActive={true}
-        photo={true} // Enable photo capture
-      />
-      
-      <View style={styles.overlay}>
-        <Text style={styles.label}>AUTO-SCANNING</Text>
-        <Text style={styles.text}>{prediction}</Text>
-        {isProcessing && <ActivityIndicator color="#28A745" style={{ marginTop: 10 }} />}
-      </View>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: theme.tint }]}>Welcome to MoneyLens</Text>
+        </View>
 
-      {/* Visual Guide Box */}
-      <View style={styles.guideBox} />
+        <View style={styles.card}>
+          <Text style={[styles.instructionStep, { color: theme.text }]}>1. <Text style={{ color: theme.tint }}>Swipe left</Text> to access the Scanner.</Text>
+          <Text style={[styles.instructionStep, { color: theme.text }]}>2. Hold the phone steady, about 6 inches from the note.</Text>
+          <Text style={[styles.instructionStep, { color: theme.text }]}>3. <Text style={{ color: theme.tint }}>Tap the screen</Text> or the big button to scan.</Text>
+          <Text style={[styles.instructionStep, { color: theme.text }]}>4. Listen for the voice confirmation of the currency value.</Text>
+          <Text style={[styles.instructionStep, { color: theme.text }]}>5. <Text style={{ color: theme.tint }}>Swipe left again</Text> for detailed help and tips.</Text>
+        </View>
+
+        <View style={styles.footer}>
+          <Text style={[styles.hint, { color: theme.icon }]}>Swipe Left to Start Scanning 👉</Text>
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'black' },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  overlay: { 
-    position: 'absolute', 
-    bottom: 80, 
-    alignSelf: 'center', 
-    backgroundColor: 'rgba(0,0,0,0.8)', 
-    padding: 20, 
-    borderRadius: 20, 
-    alignItems: 'center',
-    width: '80%',
-    borderWidth: 1,
-    borderColor: '#28A745'
+  container: {
+    flex: 1,
   },
-  label: { color: '#28A745', fontSize: 12, fontWeight: 'bold', marginBottom: 5 },
-  text: { color: 'white', fontSize: 28, fontWeight: 'bold', textAlign: 'center' },
-  guideBox: {
-    position: 'absolute',
-    top: '25%',
-    left: '10%',
-    width: '80%',
-    height: '40%',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.5)',
-    borderRadius: 15,
-    borderStyle: 'dashed'
+  scrollContent: {
+    flexGrow: 1,
+    padding: 24,
+    justifyContent: 'center',
+  },
+  header: {
+    marginBottom: 40,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  card: {
+    backgroundColor: 'rgba(18, 18, 18, 0.6)',
+    padding: 24,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.2)',
+  },
+  instructionStep: {
+    fontSize: 20,
+    lineHeight: 32,
+    marginBottom: 20,
+    fontWeight: '500',
+  },
+  footer: {
+    marginTop: 50,
+    alignItems: 'center',
+  },
+  hint: {
+    fontSize: 18,
+    fontWeight: '600',
+    letterSpacing: 1,
+    animation: 'pulse 2s infinite',
   }
 });

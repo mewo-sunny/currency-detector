@@ -15,7 +15,7 @@ export const getCurrencyFromAPI = async (photoUri) => {
   console.log("Sending request to API with URI:", formattedUri);
 
   try {
-    const response = await fetch('http://192.168.1.39:5000/predict', {
+    const response = await fetch('http://192.168.137.1:5000/predict', {
       method: 'POST',
       body: data,
       headers: {

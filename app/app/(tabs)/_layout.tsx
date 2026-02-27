@@ -1,35 +1,61 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
-
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import React, { useEffect, useState } from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialTopTabs } from '@/components/material-top-tabs';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const theme = Colors[colorScheme ?? 'dark'];
+  const [initialRoute, setInitialRoute] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkFirstLaunch = async () => {
+      try {
+        const hasLaunched = await AsyncStorage.getItem('hasLaunched');
+        if (hasLaunched === null) {
+          // First launch
+          await AsyncStorage.setItem('hasLaunched', 'true');
+          setInitialRoute('index'); // Instructions screen
+        } else {
+          setInitialRoute('scan'); // Main scan screen
+        }
+      } catch (error) {
+        console.error('Error checking first launch:', error);
+        setInitialRoute('scan'); // Fallback
+      }
+    };
+    checkFirstLaunch();
+  }, []);
+
+  if (initialRoute === null) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.tint} />
+      </View>
+    );
+  }
 
   return (
-    <Tabs
+    <MaterialTopTabs
+      initialRouteName={initialRoute}
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
-    </Tabs>
+        tabBarStyle: { display: 'none' }, // Hide the tab bar entirely
+        swipeEnabled: true,
+      }}
+    >
+      <MaterialTopTabs.Screen name="index" options={{ title: 'Instructions' }} />
+      <MaterialTopTabs.Screen name="scan" options={{ title: 'Scan' }} />
+      <MaterialTopTabs.Screen name="help" options={{ title: 'Help' }} />
+    </MaterialTopTabs>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }
+});
