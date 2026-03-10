@@ -64,6 +64,12 @@ def update_buffer(current_detections):
 
     return [v['data'] for v in detection_buffer.values()]
 
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({
+        "status": "alive",
+        "model_loaded": model is not None
+    })
 
 @app.route('/scan', methods=['POST'])
 def scan():
