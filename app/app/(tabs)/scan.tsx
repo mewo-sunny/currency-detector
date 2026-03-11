@@ -1,108 +1,95 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, Dimensions, Platform } from 'react-native';
-import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
-import * as Speech from 'expo-speech';
+import React, { useState, useEffect, useRef } from "react";
+import { StyleSheet, Text, View, Dimensions, Platform } from "react-native";
+import { Camera, useCameraDevice, useCameraPermission } from "react-native-vision-camera";
+import * as Speech from "expo-speech";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-// ── Note colors matched to actual RBI currency colours ──────────────────────
-const NOTE_COLORS: Record<string, string> = {
-  'Rs.10':   '#C97B2A', // warm chocolate brown
-  'Rs.20':   '#B8A030', // yellow-ochre
-  'Rs.50':   '#6B7FC4', // slate blue-purple
-  'Rs.100':  '#9B7EB8', // lavender
-  'Rs.200':  '#E8B830', // amber yellow
-  'Rs.500':  '#8BAFC8', // stone grey-blue
-  'rs1':     '#A8A8A8', // light silver (coin)
-  'rs2':     '#B8A070', // bronze (coin)
-  'rs5':     '#C8A000', // golden (coin)
-  'rs10':    '#D4B840', // brass (coin)
-  'rs20':    '#E0CC60', // pale gold (coin)
-  'reverse': '#55AA77', // green fallback for reverse-side detections
+const SERVER_URL = "http://10.226.21.76:5000/scan";
+
+const NOTE_COLORS = {
+  "Rs.10": "#C97B2A",
+  "Rs.20": "#B8A030",
+  "Rs.50": "#6B7FC4",
+  "Rs.100": "#9B7EB8",
+  "Rs.200": "#E8B830",
+  "Rs.500": "#8BAFC8",
 };
 
-function getNoteColor(label: string): string {
-  return NOTE_COLORS[label] ?? '#FFFFFF';
-}
-
-interface Detection {
-  label: string;
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  color: string;
+function getNoteColor(label) {
+  return NOTE_COLORS[label] || "#00FF00";
 }
 
 export default function App() {
-  const device = useCameraDevice('back');
-  const { hasPermission, requestPermission } = useCameraPermission();
-  const camera = useRef<Camera>(null);
 
-  const [detections, setDetections] = useState<Detection[]>([]);
+  const device = useCameraDevice("back");
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const camera = useRef(null);
+  const scanning = useRef(false);
+
   const [isCameraReady, setIsCameraReady] = useState(false);
-  const lastSpoken = useRef('');
+  const [detections, setDetections] = useState([]);
+  const lastSpoken = useRef("");
 
   useEffect(() => {
-    if (!hasPermission) {
-      requestPermission();
-    }
+    const init = async () => {
+      if (!hasPermission) {
+        console.log("Requesting camera permission...");
+        await requestPermission();
+      }
+    };
+    init();
+  }, []);
 
+  useEffect(() => {
     const interval = setInterval(() => {
-      if (isCameraReady) {
+      if (isCameraReady && !scanning.current) {
         captureAndSend();
       }
     }, 1200);
 
     return () => clearInterval(interval);
-  }, [hasPermission, isCameraReady]);
+  }, [isCameraReady]);
 
   const captureAndSend = async () => {
-    if (!camera.current || !hasPermission || !isCameraReady) return;
+    if (!camera.current || !isCameraReady) return;
+
+    scanning.current = true;
 
     try {
-      const photo = await camera.current.takeSnapshot({ quality: 40 });
-      const formData = new FormData();
-      const fileUri = Platform.OS === 'android' ? `file://${photo.path}` : photo.path;
+      console.log("Taking photo...");
 
-      formData.append('image', {
-        uri: fileUri,
-        type: 'image/jpeg',
-        name: 'scan.jpg',
-      } as any);
-
-      const response = await fetch('http://192.168.1.38:5000/scan', {
-        method: 'POST',
-        body: formData,
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'multipart/form-data',
-        },
+      const photo = await camera.current.takePhoto({
+        qualityPrioritization: "speed",
+        flash: "off",
       });
 
-      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+      const formData = new FormData();
+      const uri = Platform.OS === "android" ? `file://${photo.path}` : photo.path;
+
+      formData.append("image", {
+        uri: uri,
+        type: "image/jpeg",
+        name: "scan.jpg",
+      });
+
+      console.log("Sending to server...");
+      const response = await fetch(SERVER_URL, {
+        method: "POST",
+        body: formData,
+        headers: { Accept: "application/json" },
+      });
 
       const result = await response.json();
+      console.log("Server response:", result);
 
-      if (result.status === 'success' && result.detections && result.detections.length > 0) {
+      if (result.status === "success" && result.detections?.length > 0) {
+
         const { imgW, imgH } = result;
+        const scaleX = SCREEN_WIDTH / imgW;
+        const scaleY = SCREEN_HEIGHT / imgH;
 
-        const screenAspectRatio = SCREEN_HEIGHT / SCREEN_WIDTH;
-        const imageAspectRatio = imgH / imgW;
-
-        let scale = 1;
-        let offsetX = 0;
-        let offsetY = 0;
-
-        if (imageAspectRatio > screenAspectRatio) {
-          scale = SCREEN_HEIGHT / imgH;
-          offsetX = (SCREEN_WIDTH - imgW * scale) / 2;
-        } else {
-          scale = SCREEN_WIDTH / imgW;
-          offsetY = (SCREEN_HEIGHT - imgH * scale) / 2;
-        }
-
-        const mapped: Detection[] = result.detections.map((d: any) => {
+        const mapped = result.detections.map((d) => {
           const x1 = parseFloat(d.x1);
           const y1 = parseFloat(d.y1);
           const x2 = parseFloat(d.x2);
@@ -110,37 +97,40 @@ export default function App() {
 
           return {
             label: d.label,
-            left: x1 * scale + offsetX,
-            top: y1 * scale + offsetY,
-            width: (x2 - x1) * scale,
-            height: (y2 - y1) * scale,
+            left: x1 * scaleX,
+            top: y1 * scaleY,
+            width: (x2 - x1) * scaleX,
+            height: (y2 - y1) * scaleY,
             color: getNoteColor(d.label),
           };
         });
 
         setDetections(mapped);
 
-        const uniqueLabels = [...new Set(mapped.map((d) => d.label))];
-        const speechText = uniqueLabels.join(' and ');
+        const labels = [...new Set(mapped.map((d) => d.label))];
+        const speech = labels.join(" and ");
 
-        if (speechText !== lastSpoken.current && speechText.length > 0) {
+        if (speech !== lastSpoken.current) {
           await Speech.stop();
-          Speech.speak(`Detected ${speechText}`, { rate: 0.9 });
-          lastSpoken.current = speechText;
+          Speech.speak("Detected " + speech);
+          lastSpoken.current = speech;
         }
+
       } else {
         setDetections([]);
-        lastSpoken.current = '';
       }
-    } catch (e) {
-      console.log('Server connection failed.');
+
+    } catch (error) {
+      console.log("SCAN ERROR:", error);
+    } finally {
+      scanning.current = false;
     }
   };
 
   if (!hasPermission) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.errorText}>Camera Permission Required</Text>
+        <Text style={styles.text}>Camera permission required</Text>
       </View>
     );
   }
@@ -148,7 +138,7 @@ export default function App() {
   if (!device) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.errorText}>Searching for Camera...</Text>
+        <Text style={styles.text}>Loading camera...</Text>
       </View>
     );
   }
@@ -161,157 +151,45 @@ export default function App() {
         device={device}
         isActive={true}
         photo={true}
-        video={false}
-        onInitialized={() => setIsCameraReady(true)}
-        onError={() => setIsCameraReady(false)}
-        resizeMode="contain"
+        onInitialized={() => {
+          console.log("Camera initialized");
+          setIsCameraReady(true);
+        }}
       />
 
-      {detections.map((d, index) => (
+      {detections.map((d, i) => (
         <View
-          key={`${d.label}-${index}`}
+          key={i}
           style={[
-            styles.boundingBox,
-            {
-              left: d.left,
-              top: d.top,
-              width: d.width,
-              height: d.height,
-              borderColor: d.color,
-            },
+            styles.box,
+            { left: d.left, top: d.top, width: d.width, height: d.height, borderColor: d.color },
           ]}
         >
-          <View style={[styles.corner, styles.cornerTL, { borderColor: d.color }]} />
-          <View style={[styles.corner, styles.cornerTR, { borderColor: d.color }]} />
-          <View style={[styles.corner, styles.cornerBL, { borderColor: d.color }]} />
-          <View style={[styles.corner, styles.cornerBR, { borderColor: d.color }]} />
-
-          <View style={[styles.labelContainer, { backgroundColor: d.color }]}>
-            <Text style={styles.boxLabel}>{d.label}</Text>
-          </View>
+          <Text style={[styles.label, { backgroundColor: d.color }]}>{d.label}</Text>
         </View>
       ))}
 
-      <View style={styles.bottomBar}>
-        {detections.length > 0 ? (
-          <View style={styles.detectionRow}>
-            {detections.map((d, i) => (
-              <View key={i} style={[styles.badge, { backgroundColor: d.color }]}>
-                <Text style={styles.badgeText}>{d.label}</Text>
-              </View>
-            ))}
-          </View>
+      <View style={styles.bottom}>
+        {detections.length === 0 ? (
+          <Text style={styles.bottomText}>Scanning currency...</Text>
         ) : (
-          <Text style={styles.bottomText}>Scanning for Currency...</Text>
+          detections.map((d, i) => (
+            <Text key={i} style={styles.bottomText}>
+              {d.label}
+            </Text>
+          ))
         )}
       </View>
     </View>
   );
 }
 
-const CORNER_SIZE = 18;
-const CORNER_THICKNESS = 3;
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000',
-  },
-  errorText: { color: '#00FF00', fontSize: 18, fontWeight: 'bold' },
-  boundingBox: {
-    position: 'absolute',
-    borderWidth: 1.5,
-    backgroundColor: 'transparent',
-    borderRadius: 4,
-    zIndex: 10,
-  },
-  corner: {
-    position: 'absolute',
-    width: CORNER_SIZE,
-    height: CORNER_SIZE,
-    borderColor: 'transparent',
-    borderWidth: CORNER_THICKNESS,
-  },
-  cornerTL: {
-    top: -CORNER_THICKNESS,
-    left: -CORNER_THICKNESS,
-    borderBottomWidth: 0,
-    borderRightWidth: 0,
-    borderTopLeftRadius: 4,
-  },
-  cornerTR: {
-    top: -CORNER_THICKNESS,
-    right: -CORNER_THICKNESS,
-    borderBottomWidth: 0,
-    borderLeftWidth: 0,
-    borderTopRightRadius: 4,
-  },
-  cornerBL: {
-    bottom: -CORNER_THICKNESS,
-    left: -CORNER_THICKNESS,
-    borderTopWidth: 0,
-    borderRightWidth: 0,
-    borderBottomLeftRadius: 4,
-  },
-  cornerBR: {
-    bottom: -CORNER_THICKNESS,
-    right: -CORNER_THICKNESS,
-    borderTopWidth: 0,
-    borderLeftWidth: 0,
-    borderBottomRightRadius: 4,
-  },
-  labelContainer: {
-    position: 'absolute',
-    top: -26,
-    left: -CORNER_THICKNESS,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  boxLabel: {
-    color: '#000',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 50,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 30,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    minWidth: '80%',
-    alignItems: 'center',
-  },
-  bottomText: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-    letterSpacing: 0.5,
-  },
-  detectionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'center',
-  },
-  badge: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  badgeText: {
-    color: '#000',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
+  container: { flex: 1, backgroundColor: "#000" },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
+  text: { color: "#fff", fontSize: 18 },
+  box: { position: "absolute", borderWidth: 3 },
+  label: { position: "absolute", top: -24, color: "#000", paddingHorizontal: 6, paddingVertical: 2, fontWeight: "bold" },
+  bottom: { position: "absolute", bottom: 50, alignSelf: "center" },
+  bottomText: { color: "#fff", fontSize: 18 },
 });
