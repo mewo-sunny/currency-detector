@@ -3,7 +3,8 @@ module.exports = function (api) {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
-      'react-native-reanimated/plugin', // Keep this only if you use Drawer/Animation, otherwise it's fine to keep.
+      'react-native-reanimated/plugin',
+      'react-native-worklets-core/plugin', // Keep this only if you use Drawer/Animation, otherwise it's fine to keep.
     ],
   };
 };
